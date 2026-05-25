@@ -1,0 +1,15 @@
+.git
+.venv
+data/
+mlruns/
+checkpoints/
+eval_reports/
+__pycache__/
+.pytest_cache
+.mypy_cache
+.ruff_cache
+tests/e2e
+docs/
+*.md
+.env
+.env.local

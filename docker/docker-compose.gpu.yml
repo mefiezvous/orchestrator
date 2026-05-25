@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# GPU overlay — adds NVIDIA runtime to the worker service only.
+# Usage (from repo root):
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.gpu.yml up -d
+
+name: orchestrator
+
+services:
+  worker:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
