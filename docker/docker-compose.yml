@@ -4,6 +4,11 @@
 # Relative paths (../) are resolved from this file's directory (orchestrator/docker/).
 # ../../<repo>  →  robotics-workspace/<repo>   (sibling repos in the workspace)
 # ../<path>     →  orchestrator/<path>
+#
+# Host workspace location is parameterized via ${WORKSPACE_HOST_PATH} (default: ../..).
+# To run with a non-default workspace layout (e.g. cloned elsewhere on host):
+#   WORKSPACE_HOST_PATH=/abs/path/to/workspace docker compose up -d
+# See docs/RUNBOOK.md → "Custom workspace layout".
 
 name: orchestrator
 
@@ -59,9 +64,9 @@ services:
       REDIS_URL: redis://redis:6379/0
       MLFLOW_TRACKING_URI: file:///data/mlruns
     volumes:
-      - ../../lerobot-playground-portfolio:/workspace/lerobot-playground-portfolio:ro
-      - ../../ml-core:/workspace/ml-core:ro
-      - ../../robotics-platform-template:/workspace/robotics-platform-template:ro
+      - ${WORKSPACE_HOST_PATH:-../..}/lerobot-playground-portfolio:/workspace/lerobot-playground-portfolio:ro
+      - ${WORKSPACE_HOST_PATH:-../..}/ml-core:/workspace/ml-core:ro
+      - ${WORKSPACE_HOST_PATH:-../..}/robotics-platform-template:/workspace/robotics-platform-template:ro
       - ../data:/data
     depends_on:
       redis:
@@ -98,9 +103,9 @@ services:
       MLFLOW_TRACKING_URI: file:///data/mlruns
     volumes:
       # RW: worker may write datasets/checkpoints to sibling repo data dirs
-      - ../../lerobot-playground-portfolio:/workspace/lerobot-playground-portfolio
-      - ../../ml-core:/workspace/ml-core
-      - ../../robotics-platform-template:/workspace/robotics-platform-template:ro
+      - ${WORKSPACE_HOST_PATH:-../..}/lerobot-playground-portfolio:/workspace/lerobot-playground-portfolio
+      - ${WORKSPACE_HOST_PATH:-../..}/ml-core:/workspace/ml-core
+      - ${WORKSPACE_HOST_PATH:-../..}/robotics-platform-template:/workspace/robotics-platform-template:ro
       - ../data:/data
     depends_on:
       redis:
