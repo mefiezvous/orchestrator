@@ -382,6 +382,52 @@ If GPUs not detected:
 
 ---
 
+## Custom Workspace Layout
+
+By default, `docker-compose.yml` expects the canonical workspace layout, with the four sibling repos checked out next to `orchestrator/`:
+
+```
+robotics-workspace/
+├── orchestrator/                      ← this repo (compose is invoked from here)
+├── lerobot-playground-portfolio/
+├── ml-core/
+├── robotics-platform-template/
+└── _private/my-robot-stack/           (optional)
+```
+
+Volume sources in `docker/docker-compose.yml` use `${WORKSPACE_HOST_PATH:-../..}` to resolve to that layout (`../..` is relative to `orchestrator/docker/`, i.e. `robotics-workspace/`).
+
+### Override for non-canonical layouts
+
+If the sibling repos live elsewhere on the host (e.g. cloned to `/srv/robotics/`), set `WORKSPACE_HOST_PATH` to an absolute path:
+
+```bash
+# in .env (preferred — persisted)
+WORKSPACE_HOST_PATH=/srv/robotics
+
+# or one-shot
+WORKSPACE_HOST_PATH=/srv/robotics docker compose -f docker/docker-compose.yml up -d
+```
+
+### Verify resolved volume mounts
+
+Before starting containers, validate the rendered compose config:
+
+```bash
+docker compose -f docker/docker-compose.yml config | grep -A1 "source:"
+```
+
+Each `source:` line should resolve to an existing path on the host. Missing repos → Docker will fail at startup with `no such file or directory`.
+
+### Distinguishing host vs container
+
+| Variable | Side | Purpose |
+|---|---|---|
+| `WORKSPACE_HOST_PATH` | host (compose) | Volume mount source (where Docker reads sibling repos from) |
+| `WORKSPACE_ROOT` | container | Where the api/worker code expects to find sibling repos (`/workspace`) — **do not change** unless rewriting `Dockerfile` |
+
+---
+
 ## WSL2 Notes (Windows + Docker Desktop)
 
 ### Path Binding
