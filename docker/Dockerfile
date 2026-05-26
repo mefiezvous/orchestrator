@@ -26,6 +26,8 @@ RUN uv venv /opt/venv
 # Copy dependency spec first for layer caching
 WORKDIR /build
 COPY pyproject.toml .
+COPY README.md ./
+COPY LICENSE ./
 # Provide a minimal src stub so hatchling can introspect the project
 RUN mkdir -p src/orchestrator && touch src/orchestrator/__init__.py
 
