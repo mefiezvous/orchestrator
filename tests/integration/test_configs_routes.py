@@ -10,16 +10,22 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from orchestrator.core.config import get_settings
+from orchestrator.core.config import Settings, get_settings
 
 
-def _make_app() -> FastAPI:
-    """Build a minimal FastAPI app with only the configs router."""
-    # Import here so monkeypatching of settings takes effect first
+def _make_app(settings: Settings) -> FastAPI:
+    """Build a minimal FastAPI app with only the configs router.
+
+    Injects *settings* as a ``get_settings`` override for FastAPI DI.
+    Callers must also monkeypatch env vars + call ``get_settings.cache_clear()``
+    so the internal ``get_settings()`` calls inside the hydra_introspect helpers
+    resolve to the correct lerobot_repo.
+    """
     from orchestrator.api.routes.configs import router
 
     app = FastAPI()
     app.include_router(router)
+    app.dependency_overrides[get_settings] = lambda: settings
     return app
 
 
@@ -44,11 +50,14 @@ def test_get_envs_returns_expected_list(tmp_path: Path, monkeypatch: pytest.Monk
     _seed_env_configs(repo)
 
     monkeypatch.setenv("LEROBOT_REPO", str(repo))
+    monkeypatch.setenv("API_TOKEN", "test-token")
     get_settings.cache_clear()
-
     try:
-        client = TestClient(_make_app())
-        response = client.get("/api/v1/configs/envs")
+        s = Settings(_env_file=None)  # type: ignore[call-arg]
+        client = TestClient(_make_app(s))
+        response = client.get(
+            "/api/v1/configs/envs", headers={"Authorization": "Bearer test-token"}
+        )
     finally:
         get_settings.cache_clear()
 
@@ -71,11 +80,14 @@ def test_get_envs_missing_lerobot_repo_returns_empty(
 ) -> None:
     """GET /api/v1/configs/envs returns [] when lerobot_repo does not exist."""
     monkeypatch.setenv("LEROBOT_REPO", str(tmp_path / "nonexistent"))
+    monkeypatch.setenv("API_TOKEN", "test-token")
     get_settings.cache_clear()
-
     try:
-        client = TestClient(_make_app())
-        response = client.get("/api/v1/configs/envs")
+        s = Settings(_env_file=None)  # type: ignore[call-arg]
+        client = TestClient(_make_app(s))
+        response = client.get(
+            "/api/v1/configs/envs", headers={"Authorization": "Bearer test-token"}
+        )
     finally:
         get_settings.cache_clear()
 
@@ -90,11 +102,14 @@ def test_get_policies_empty_without_yamls(tmp_path: Path, monkeypatch: pytest.Mo
     (repo / "configs" / "policy").mkdir(parents=True)
 
     monkeypatch.setenv("LEROBOT_REPO", str(repo))
+    monkeypatch.setenv("API_TOKEN", "test-token")
     get_settings.cache_clear()
-
     try:
-        client = TestClient(_make_app())
-        response = client.get("/api/v1/configs/policies")
+        s = Settings(_env_file=None)  # type: ignore[call-arg]
+        client = TestClient(_make_app(s))
+        response = client.get(
+            "/api/v1/configs/policies", headers={"Authorization": "Bearer test-token"}
+        )
     finally:
         get_settings.cache_clear()
 
@@ -109,14 +124,18 @@ def test_all_config_routes_exist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     repo.mkdir()
 
     monkeypatch.setenv("LEROBOT_REPO", str(repo))
+    monkeypatch.setenv("API_TOKEN", "test-token")
     get_settings.cache_clear()
 
     endpoints = ["/envs", "/policies", "/profiles", "/datasets", "/collect", "/eval"]
 
     try:
-        client = TestClient(_make_app())
+        s = Settings(_env_file=None)  # type: ignore[call-arg]
+        client = TestClient(_make_app(s))
         for ep in endpoints:
-            response = client.get(f"/api/v1/configs{ep}")
+            response = client.get(
+                f"/api/v1/configs{ep}", headers={"Authorization": "Bearer test-token"}
+            )
             assert response.status_code == 200, f"Endpoint {ep} returned {response.status_code}"
             assert isinstance(response.json(), list), f"Endpoint {ep} did not return a list"
     finally:

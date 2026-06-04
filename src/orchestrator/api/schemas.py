@@ -8,9 +8,32 @@ WP-4 schemas live in the clearly-delimited section below.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+# ---------------------------------------------------------------------------
+# hydra_overrides validation (ORC-002)
+# ---------------------------------------------------------------------------
+
+# Dangerous OmegaConf resolvers that could exfiltrate env-vars or execute code.
+# Reject any ${<resolver>:...} interpolation that isn't a known-safe Hydra
+# config reference.  The whitelist below allows structural references like
+# ${dataset.name} while blocking ${oc.env:SECRET}.
+_DANGEROUS_RESOLVER_RE = re.compile(
+    r"\$\{(?!dataset\.|policy\.|env_config\.|training\.|eval\.|robot\.)[A-Za-z_][^}]*:[^}]*\}"
+)
+
+# Allow only safe characters in each override entry.  Covers the common
+# Hydra syntax: key=value, +key=value, ~key, //key, group/subgroup=value.
+# Structural references like ${dataset.name} (no colon) are still allowed.
+_SAFE_OVERRIDE_RE = re.compile(
+    r"^[A-Za-z0-9_.+@/=,\-~]+(\$\{[A-Za-z0-9_.]+\}[A-Za-z0-9_.+@/=,\-~]*)*$"
+)
+
+_MAX_OVERRIDES = 32
+_MAX_OVERRIDE_LEN = 256
 
 # ---- Hydra introspection responses (WP-4) ----
 
@@ -51,6 +74,34 @@ class DatasetResponse(BaseModel):
 # ---- Run job requests/responses (WP-3) ----
 
 
+def _validate_hydra_overrides(overrides: list[str]) -> list[str]:
+    """Shared validator for hydra_overrides across all request types (ORC-002).
+
+    Rejects:
+    - More than _MAX_OVERRIDES entries
+    - Any single entry longer than _MAX_OVERRIDE_LEN characters
+    - Any entry containing a dangerous OmegaConf resolver (e.g. ${oc.env:VAR})
+    - Any entry with characters outside the safe allowlist
+    """
+    if len(overrides) > _MAX_OVERRIDES:
+        raise ValueError(
+            f"hydra_overrides must contain at most {_MAX_OVERRIDES} entries, got {len(overrides)}"
+        )
+    for entry in overrides:
+        if len(entry) > _MAX_OVERRIDE_LEN:
+            raise ValueError(
+                f"hydra_override entry too long (max {_MAX_OVERRIDE_LEN} chars): {entry[:64]!r}..."
+            )
+        if _DANGEROUS_RESOLVER_RE.search(entry):
+            raise ValueError(
+                f"hydra_override entry contains a forbidden OmegaConf resolver "
+                f"(e.g. ${{oc.env:...}}): {entry!r}"
+            )
+        if not _SAFE_OVERRIDE_RE.match(entry):
+            raise ValueError(f"hydra_override entry contains forbidden characters: {entry!r}")
+    return overrides
+
+
 class CollectRequest(BaseModel):
     episodes: int = Field(gt=0, le=10000, default=10)
     env: str | None = None
@@ -58,6 +109,11 @@ class CollectRequest(BaseModel):
     push_to_hub: bool = False
     seed: int | None = None
     hydra_overrides: list[str] = Field(default_factory=list)
+
+    @field_validator("hydra_overrides")
+    @classmethod
+    def validate_overrides(cls, v: list[str]) -> list[str]:
+        return _validate_hydra_overrides(v)
 
 
 class TrainRequest(BaseModel):
@@ -68,6 +124,11 @@ class TrainRequest(BaseModel):
     hf_repo_id: str | None = None
     hydra_overrides: list[str] = Field(default_factory=list)
 
+    @field_validator("hydra_overrides")
+    @classmethod
+    def validate_overrides(cls, v: list[str]) -> list[str]:
+        return _validate_hydra_overrides(v)
+
 
 class EvalRequest(BaseModel):
     checkpoint_path: str
@@ -75,6 +136,33 @@ class EvalRequest(BaseModel):
     visualize: bool = False
     policy: Literal["act", "diffusion"] | None = None
     hydra_overrides: list[str] = Field(default_factory=list)
+
+    @field_validator("hydra_overrides")
+    @classmethod
+    def validate_overrides(cls, v: list[str]) -> list[str]:
+        return _validate_hydra_overrides(v)
+
+    @field_validator("checkpoint_path")
+    @classmethod
+    def validate_checkpoint_path(cls, v: str) -> str:
+        """Reject path traversal and absolute paths outside allowed roots (ORC-008).
+
+        Full confinement to lerobot_repo/checkpoints/ is enforced at the route
+        level (where settings are available).  Here we reject obvious traversal
+        attempts and non-.pt/.safetensors extensions.
+        """
+        if ".." in v:
+            raise ValueError("checkpoint_path must not contain '..'")
+        from pathlib import Path
+
+        p = Path(v)
+        if p.is_absolute():
+            raise ValueError(
+                "checkpoint_path must be a relative path under the checkpoints/ directory"
+            )
+        if p.suffix not in {".pt", ".safetensors"}:
+            raise ValueError("checkpoint_path must end with .pt or .safetensors")
+        return v
 
 
 class RunResponse(BaseModel):

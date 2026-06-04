@@ -38,12 +38,47 @@ def _scan_for_mlflow_run_id(line: str) -> str | None:
     return None
 
 
+_SUBPROCESS_ENV_ALLOWLIST = frozenset(
+    {
+        # ML framework secrets
+        "HF_TOKEN",
+        "HUGGING_FACE_HUB_TOKEN",
+        "WANDB_API_KEY",
+        "MLFLOW_TRACKING_URI",
+        "MLFLOW_TRACKING_USERNAME",
+        "MLFLOW_TRACKING_PASSWORD",
+        # System / language
+        "PATH",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "LC_MESSAGES",
+        "PYTHONPATH",
+        "PYTHONUNBUFFERED",
+        "PYTHONDONTWRITEBYTECODE",
+        # GPU
+        "CUDA_VISIBLE_DEVICES",
+        "NVIDIA_VISIBLE_DEVICES",
+    }
+)
+
+
 def _make_env(settings: Any) -> dict[str, str]:
-    """Build the subprocess environment: inherit os.environ + inject secrets."""
-    env = dict(os.environ)
+    """Build the subprocess environment using an explicit allowlist.
+
+    Only a known set of variables is forwarded to Hydra subprocesses —
+    never the full ``os.environ``.  This prevents an authenticated caller
+    from injecting ``${oc.env:API_TOKEN}`` (or any other var) into a
+    hydra_override and reading the resolved value back via the SSE log
+    stream (ORC-002).
+    """
+    env: dict[str, str] = {k: v for k, v in os.environ.items() if k in _SUBPROCESS_ENV_ALLOWLIST}
+    # Always inject the tracking URI from settings (may differ from host env).
     env["MLFLOW_TRACKING_URI"] = settings.mlflow_tracking_uri
     if settings.hf_token:
         env["HF_TOKEN"] = settings.hf_token
+        env["HUGGING_FACE_HUB_TOKEN"] = settings.hf_token
     if settings.wandb_api_key:
         env["WANDB_API_KEY"] = settings.wandb_api_key
     return env

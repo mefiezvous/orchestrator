@@ -49,4 +49,4 @@ htmlcov/
 Thumbs.db
 
 # uv
-uv.lock
+# uv.lock is intentionally tracked (ORC-003: reproducible dep resolution)

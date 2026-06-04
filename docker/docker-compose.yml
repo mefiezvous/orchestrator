@@ -19,6 +19,15 @@ services:
   # ---------------------------------------------------------------------------
     image: redis:7-alpine
     restart: unless-stopped
+    # ORC-005: run as non-root, drop all capabilities, no new privileges.
+    user: "999:999"
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs:
+      - /tmp
+    pids_limit: 256
+    mem_limit: 512m
     volumes:
       - redis_data:/data
     healthcheck:
@@ -32,6 +41,15 @@ services:
   # ---------------------------------------------------------------------------
     image: ghcr.io/mlflow/mlflow:v2.18.0
     restart: unless-stopped
+    # ORC-005: run as non-root, drop all capabilities, no new privileges.
+    user: "1000:1000"
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs:
+      - /tmp
+    pids_limit: 256
+    mem_limit: 1g
     ports:
       - "${MLFLOW_HOST:-127.0.0.1}:${MLFLOW_PORT:-5000}:5000"
     environment:
@@ -53,6 +71,16 @@ services:
       target: runtime
     image: orchestrator:0.1.0
     restart: unless-stopped
+    # ORC-005: run as non-root (uid 1000 created in Dockerfile), drop all
+    # capabilities, prevent privilege escalation, read-only root filesystem.
+    user: "1000:1000"
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs:
+      - /tmp
+    pids_limit: 512
+    mem_limit: 4g
     ports:
       - "${API_HOST:-127.0.0.1}:${API_PORT:-8000}:8000"
     env_file: ../.env
@@ -64,6 +92,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       MLFLOW_TRACKING_URI: file:///data/mlruns
     volumes:
+      # Sibling repos: always read-only for the API service (never writes).
       - ${WORKSPACE_HOST_PATH:-../..}/lerobot-playground-portfolio:/workspace/lerobot-playground-portfolio:ro
       - ${WORKSPACE_HOST_PATH:-../..}/ml-core:/workspace/ml-core:ro
       - ${WORKSPACE_HOST_PATH:-../..}/robotics-platform-template:/workspace/robotics-platform-template:ro
@@ -93,6 +122,16 @@ services:
       target: runtime
     image: orchestrator:0.1.0
     restart: unless-stopped
+    # ORC-005: run as non-root, drop all capabilities, no new privileges.
+    # read_only is not set here because the worker writes checkpoints/datasets
+    # to the sibling repo mount — tmpfs covers /tmp only.
+    user: "1000:1000"
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp
+    pids_limit: 512
+    mem_limit: 8g
     env_file: ../.env
     environment:
       WORKSPACE_ROOT: /workspace
@@ -102,9 +141,11 @@ services:
       REDIS_URL: redis://redis:6379/0
       MLFLOW_TRACKING_URI: file:///data/mlruns
     volumes:
-      # RW: worker may write datasets/checkpoints to sibling repo data dirs
+      # ORC-005: worker writes datasets/checkpoints only to lerobot-playground-portfolio
+      # and ml-core; robotics-platform-template is read-only (config only).
+      # Bind only the specific subdirs that actually need write access (RW).
       - ${WORKSPACE_HOST_PATH:-../..}/lerobot-playground-portfolio:/workspace/lerobot-playground-portfolio
-      - ${WORKSPACE_HOST_PATH:-../..}/ml-core:/workspace/ml-core
+      - ${WORKSPACE_HOST_PATH:-../..}/ml-core:/workspace/ml-core:ro
       - ${WORKSPACE_HOST_PATH:-../..}/robotics-platform-template:/workspace/robotics-platform-template:ro
       - ../data:/data
     depends_on:

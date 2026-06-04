@@ -11,15 +11,21 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from orchestrator.core.config import get_settings
+from orchestrator.core.config import Settings, get_settings
 
 
-def _make_app() -> FastAPI:
-    """Build a minimal FastAPI app with only the artifacts router."""
+def _make_app(settings: Settings) -> FastAPI:
+    """Build a minimal FastAPI app with only the artifacts router.
+
+    Injects *settings* as a ``get_settings`` override for the FastAPI DI layer,
+    and monkeypatching of env vars + cache_clear handles the internal
+    ``get_settings()`` calls inside ``list_*`` helpers.
+    """
     from orchestrator.api.routes.artifacts import router
 
     app = FastAPI()
     app.include_router(router)
+    app.dependency_overrides[get_settings] = lambda: settings
     return app
 
 
@@ -39,7 +45,7 @@ def _seed_artifacts(repo: Path) -> None:
     viz.mkdir()
     (viz / "episode_001.mp4").write_bytes(b"fakevideo")
 
-    # Dataset config pointing to a real root
+    # Dataset config pointing to repo/data/ (ORC-009 confinement)
     ds_root = repo / "data" / "my_dataset"
     ds_root.mkdir(parents=True)
     (ds_root / "file.bin").write_bytes(b"0" * 1024)
@@ -61,11 +67,15 @@ def test_get_checkpoints_returns_expected(tmp_path: Path, monkeypatch: pytest.Mo
     _seed_artifacts(repo)
 
     monkeypatch.setenv("LEROBOT_REPO", str(repo))
+    monkeypatch.setenv("API_TOKEN", "test-token")
     get_settings.cache_clear()
-
     try:
-        client = TestClient(_make_app())
-        response = client.get("/api/v1/artifacts/checkpoints")
+        s = Settings(_env_file=None)  # type: ignore[call-arg]
+        client = TestClient(_make_app(s))
+        response = client.get(
+            "/api/v1/artifacts/checkpoints",
+            headers={"Authorization": "Bearer test-token"},
+        )
     finally:
         get_settings.cache_clear()
 
@@ -88,11 +98,15 @@ def test_get_eval_reports_returns_expected(tmp_path: Path, monkeypatch: pytest.M
     _seed_artifacts(repo)
 
     monkeypatch.setenv("LEROBOT_REPO", str(repo))
+    monkeypatch.setenv("API_TOKEN", "test-token")
     get_settings.cache_clear()
-
     try:
-        client = TestClient(_make_app())
-        response = client.get("/api/v1/artifacts/eval-reports")
+        s = Settings(_env_file=None)  # type: ignore[call-arg]
+        client = TestClient(_make_app(s))
+        response = client.get(
+            "/api/v1/artifacts/eval-reports",
+            headers={"Authorization": "Bearer test-token"},
+        )
     finally:
         get_settings.cache_clear()
 
@@ -113,11 +127,15 @@ def test_get_datasets_returns_expected(tmp_path: Path, monkeypatch: pytest.Monke
     _seed_artifacts(repo)
 
     monkeypatch.setenv("LEROBOT_REPO", str(repo))
+    monkeypatch.setenv("API_TOKEN", "test-token")
     get_settings.cache_clear()
-
     try:
-        client = TestClient(_make_app())
-        response = client.get("/api/v1/artifacts/datasets")
+        s = Settings(_env_file=None)  # type: ignore[call-arg]
+        client = TestClient(_make_app(s))
+        response = client.get(
+            "/api/v1/artifacts/datasets",
+            headers={"Authorization": "Bearer test-token"},
+        )
     finally:
         get_settings.cache_clear()
 
@@ -135,14 +153,19 @@ def test_all_artifact_routes_return_empty_when_repo_missing(
 ) -> None:
     """All 3 artifact endpoints return [] when lerobot_repo does not exist."""
     monkeypatch.setenv("LEROBOT_REPO", str(tmp_path / "nonexistent"))
+    monkeypatch.setenv("API_TOKEN", "test-token")
     get_settings.cache_clear()
 
     endpoints = ["/checkpoints", "/eval-reports", "/datasets"]
 
     try:
-        client = TestClient(_make_app())
+        s = Settings(_env_file=None)  # type: ignore[call-arg]
+        client = TestClient(_make_app(s))
         for ep in endpoints:
-            response = client.get(f"/api/v1/artifacts{ep}")
+            response = client.get(
+                f"/api/v1/artifacts{ep}",
+                headers={"Authorization": "Bearer test-token"},
+            )
             assert response.status_code == 200, f"{ep} => {response.status_code}"
             assert response.json() == [], f"{ep} => {response.json()}"
     finally:

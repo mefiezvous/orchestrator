@@ -47,7 +47,8 @@ RUN uv pip install --python /opt/venv/bin/python \
         "httpx>=0.27" \
         "python-multipart>=0.0.12" \
         "pyyaml>=6.0" \
-        "mlflow-skinny>=2.18"
+        "mlflow-skinny>=2.18" \
+        "slowapi>=0.1.9"
 
 # Now copy the real source and install the project in editable mode
 COPY src/ src/
@@ -81,8 +82,14 @@ COPY --from=builder /opt/venv /opt/venv
 # Copy the worker entrypoint
 COPY --from=builder /tmp/entrypoint-worker.sh /usr/local/bin/entrypoint-worker.sh
 
-# Data directory (bind-mounted in compose, but ensure it exists)
-RUN mkdir -p /data /workspace
+# ORC-005: create a non-root user (uid 1000) to run the process.
+# This uid matches user: "1000:1000" in docker-compose.yml so bind-mounted
+# volume files are accessible.
+RUN useradd -u 1000 -m -s /bin/bash orch \
+    && mkdir -p /data /workspace /app \
+    && chown -R orch:orch /data /workspace /app /opt/venv
+
+USER orch
 
 WORKDIR /app
 
