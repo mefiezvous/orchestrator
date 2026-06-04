@@ -5,8 +5,8 @@ SPDX-License-Identifier: Apache-2.0
 
 # ADR-003 — Orchestrator Frontend Strategy
 
-- **Status**: Proposed
-- **Date**: 2026-06-03
+- **Status**: Accepted
+- **Date**: 2026-06-03 (Accepted 2026-06-04)
 - **Deciders**: Arthur Mouraud
 - **Scope**: orchestrator/ (frontend stack, SSE auth transport, build pipeline, bundling shape)
 - **Context tags**: orchestrator, frontend, sse, auth
