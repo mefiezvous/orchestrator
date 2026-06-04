@@ -50,3 +50,10 @@ Thumbs.db
 
 # uv
 # uv.lock is intentionally tracked (ORC-003: reproducible dep resolution)
+
+# Frontend (ADR-003)
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/src/api/generated/
+frontend/tsconfig.tsbuildinfo

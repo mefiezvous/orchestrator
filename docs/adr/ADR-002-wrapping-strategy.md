@@ -94,6 +94,7 @@ Critère décisif pour le profil Arthur : **B est la seule option qui (a) reste 
 2. Implémenter `up()` : invoque `docker compose -f docker/docker-compose.yml up -d` via `subprocess.run`, capture stdout/stderr, gère le code retour.
 3. Implémenter `wait_healthy(timeout=60)` : poll `GET http://127.0.0.1:8000/api/v1/health` avec backoff exponentiel, abandonne proprement si timeout (affiche `docker compose logs api`).
 4. Implémenter `open_browser()` : `webbrowser.open(api_docs_url)` — désactivable via `--no-browser` pour CI/Kaggle.
+   - Note 2026-06-04 : depuis ADR-003 (Accepted), `webbrowser.open` doit cibler `http://127.0.0.1:8000/` (frontend SPA) et non `/api/docs`. Garder `/api/docs` comme fallback si le bundle frontend n'est pas présent (cf. `if frontend_dist.is_dir()` dans `api/main.py`).
 5. Implémenter `down()` : `docker compose down`, accessible via `python -m orchestrator.launcher --down` et `make stop`.
 6. Ajouter cibles Makefile : `start` (alias `python -m orchestrator.launcher`) et `stop` (alias `--down`). Ne **pas** supprimer `up`/`down` actuels.
 7. Ajouter tests unitaires (mock `subprocess.run` + mock `httpx`) — marker `unit`, coverage ≥90% sur le module (cohérent avec la gate `api/`).
