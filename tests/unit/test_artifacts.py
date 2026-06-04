@@ -125,13 +125,17 @@ def test_list_eval_reports_missing_dir_returns_empty(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 def test_list_datasets_from_yaml_root(tmp_path: Path) -> None:
-    """list_datasets reads root: from dataset YAML configs and sums file sizes."""
+    """list_datasets reads root: from dataset YAML configs and sums file sizes.
+
+    ORC-009: dataset root must be under lerobot_repo/data/ — the test now
+    places the dataset root there to match the enforced confinement.
+    """
     repo = _make_repo(tmp_path)
     dataset_dir = repo / "configs" / "dataset"
     dataset_dir.mkdir(parents=True)
 
-    # Create a real dataset root with some files
-    ds_root = tmp_path / "datasets" / "lerobot_cube"
+    # Create a real dataset root inside lerobot_repo/data/ (ORC-009 confinement)
+    ds_root = repo / "data" / "lerobot_cube"
     ds_root.mkdir(parents=True)
     (ds_root / "data.hdf5").write_bytes(b"0" * 2048)
     (ds_root / "meta.json").write_bytes(b"1" * 512)

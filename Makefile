@@ -19,10 +19,10 @@ help:
 
 install:
 	uv sync --extra dev
-	@command -v pre-commit >/dev/null 2>&1 && pre-commit install || true
+	pre-commit install
 
 token:
-	@$(PY) -c "import secrets, pathlib; \
+	@$(PY) -c "import secrets, pathlib, os, stat; \
 p = pathlib.Path('.env'); \
 src = p.read_text() if p.exists() else pathlib.Path('.env.example').read_text(); \
 tok = secrets.token_urlsafe(32); \
@@ -35,7 +35,9 @@ for line in src.splitlines():\
     done = done or line2.startswith('API_TOKEN='); \
 if not done: lines.append(f'API_TOKEN={tok}'); \
 p.write_text('\n'.join(lines) + '\n'); \
-print(f'API_TOKEN written to .env ({len(tok)} chars).')"
+try: os.chmod(p, stat.S_IRUSR | stat.S_IWUSR)\
+except OSError: pass; \
+print(f'API_TOKEN written to .env ({len(tok)} chars, mode 0o600).')"
 
 up:
 	$(COMPOSE) up -d

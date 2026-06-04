@@ -221,6 +221,24 @@ def list_datasets(*, lerobot_repo: Path | None = None) -> list[DatasetEntry]:
             continue
         seen_roots.add(root_path)
 
+        # ORC-009: confine root_path to the repo's data/ directory to prevent
+        # a malicious YAML from pointing root: /etc or root: / and triggering
+        # arbitrary disk traversal via the API.
+        allowed_prefix = (repo / "data").resolve()
+        try:
+            resolved_root = root_path.resolve()
+        except OSError:
+            logger.warning("Cannot resolve dataset root path: {}", root_path)
+            continue
+        if not resolved_root.is_relative_to(allowed_prefix):
+            logger.warning(
+                "Dataset root {} resolves to {} which is outside the allowed prefix {} — skipping",
+                root_path,
+                resolved_root,
+                allowed_prefix,
+            )
+            continue
+
         if not root_path.exists() or not root_path.is_dir():
             logger.warning("Dataset root does not exist or is not a dir: {}", root_path)
             continue

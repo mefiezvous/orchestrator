@@ -174,6 +174,19 @@ data: {"ts": "2026-05-25T12:34:57Z", "stream": "stdout", "line": "[2026-05-25 12
 
 Press `Ctrl+C` to stop.
 
+> **ORC-004 — Browser EventSource limitation (deferred to ADR-003):**
+> The SSE endpoints (`/logs`, `/metrics`) require a `Bearer` token via the
+> `Authorization` header.  The browser-native `EventSource` API **cannot set
+> custom headers**, so a JavaScript frontend cannot connect using the standard
+> flow.  Until ADR-003 decides on the frontend auth transport (short-lived
+> signed stream token vs. WebSockets vs. same-origin cookie), **browser SSE
+> clients are unsupported**.  CLI and backend consumers using `curl -H
+> "Authorization: Bearer $TOKEN"` work without restriction.
+>
+> **Do NOT work around this by passing `?token=...` as a query parameter** —
+> query-string tokens appear in nginx/uvicorn access logs, browser history,
+> and `document.referrer`, which negates the protection.  Wait for ADR-003.
+
 ### Stream Live Metrics (SSE)
 
 For a training job:

@@ -19,15 +19,11 @@ def require_token(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> None:
-    """Validate the Bearer token; raise HTTP 401/503 on failure.
+    """Validate the Bearer token; raise HTTP 401 on failure.
 
-    When ``API_TOKEN`` is empty auth is **disabled** (pass-through).
-    This allows running the orchestrator without auth in trusted environments.
-    When ``API_TOKEN`` is set, a valid Bearer token is required on every request.
+    ``API_TOKEN`` is **mandatory** (validated at startup by the Settings validator).
+    A valid Bearer token is always required on every request.
     """
-    if not settings.api_token:
-        # Auth disabled — running without a token is intentional (dev/trusted mode).
-        return
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=401, detail="missing bearer token")
     if not secrets.compare_digest(credentials.credentials, settings.api_token):

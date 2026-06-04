@@ -7,7 +7,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,6 +25,22 @@ class Settings(BaseSettings):
     api_host: str = Field(default="127.0.0.1")
     api_port: int = Field(default=8000)
     allow_lan: bool = Field(default=False)
+
+    @field_validator("api_token")
+    @classmethod
+    def api_token_must_be_set(cls, v: str) -> str:
+        """Fail-closed: API_TOKEN must not be empty.
+
+        A missing token would silently disable auth and — combined with
+        ALLOW_LAN=true — expose subprocess execution to the network.
+        Set API_TOKEN in .env (run ``make token`` to generate one).
+        """
+        if not v:
+            raise ValueError(
+                "API_TOKEN must be set. Run 'make token' to generate one, "
+                "or set API_TOKEN=<value> in .env before starting."
+            )
+        return v
 
     workspace_root: Path = Field(default=Path("/workspace"))
     lerobot_repo: Path = Field(default=Path("/workspace/lerobot-playground-portfolio"))

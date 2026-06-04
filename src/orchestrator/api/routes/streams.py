@@ -40,17 +40,62 @@ _WATCHERS_LOCK = asyncio.Lock()
 # ---------------------------------------------------------------------------
 
 _SECRET_PATTERNS: list[re.Pattern[str]] = [
+    # --- assignment-style patterns (key=value) ---
     re.compile(r"(Bearer\s+)\S+", re.IGNORECASE),
     re.compile(r"(HF_TOKEN=)\S+", re.IGNORECASE),
+    re.compile(r"(HUGGING_FACE_HUB_TOKEN=)\S+", re.IGNORECASE),
     re.compile(r"(API_TOKEN=)\S+", re.IGNORECASE),
     re.compile(r"(WANDB_API_KEY=)\S+", re.IGNORECASE),
+    re.compile(r"(MLFLOW_TRACKING_USERNAME=)\S+", re.IGNORECASE),
+    re.compile(r"(MLFLOW_TRACKING_PASSWORD=)\S+", re.IGNORECASE),
+    re.compile(r"(aws_secret_access_key\s*=\s*)\S+", re.IGNORECASE),
+    # --- bare token patterns (resolved values appearing without a key prefix) ---
+    # HuggingFace token: hf_<30+ alphanumeric>
+    re.compile(r"(hf_)[A-Za-z0-9]{30,}"),
+    # GitHub PAT: ghp_<30+ alphanumeric>
+    re.compile(r"(ghp_)[A-Za-z0-9]{30,}"),
+    # OpenAI / generic sk- keys
+    re.compile(r"(sk-)[A-Za-z0-9_\-]{20,}"),
+    # AWS Access Key ID: AKIA<16 uppercase alphanumeric>
+    re.compile(r"(AKIA)[0-9A-Z]{16}"),
+    # JWT tokens: eyJ<base64url>.<base64url>.<base64url>
+    re.compile(r"eyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}"),
 ]
+
+# Patterns that have a captured prefix group use \g<1>*** replacement.
+# Patterns without a capture group (bare token patterns) use *** directly.
+_PATTERNS_WITH_PREFIX = frozenset(
+    {
+        "Bearer\\ ",
+        "HF_TOKEN=",
+        "HUGGING_FACE_HUB_TOKEN=",
+        "API_TOKEN=",
+        "WANDB_API_KEY=",
+        "MLFLOW_TRACKING_USERNAME=",
+        "MLFLOW_TRACKING_PASSWORD=",
+        "aws_secret_access_key",
+        "hf_",
+        "ghp_",
+        "sk-",
+        "AKIA",
+    }
+)
 
 
 def _sanitize_secret(line: str) -> str:
-    """Replace secret values in *line* with ``***``."""
+    """Replace secret values in *line* with ``***``.
+
+    Handles both assignment-style secrets (KEY=value) and bare token
+    patterns (hf_*, ghp_*, sk-*, JWT, AWS keys) that may appear as resolved
+    values in Hydra/OmegaConf output (ORC-002).
+    """
     for pattern in _SECRET_PATTERNS:
-        line = pattern.sub(r"\g<1>***", line)
+        if pattern.groups:
+            # Pattern has at least one capture group → preserve the prefix
+            line = pattern.sub(r"\g<1>***", line)
+        else:
+            # No capture group (e.g. JWT) → replace the whole match
+            line = pattern.sub("***", line)
     return line
 
 

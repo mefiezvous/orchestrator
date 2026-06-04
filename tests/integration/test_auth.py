@@ -56,16 +56,16 @@ def test_wrong_scheme_returns_401(settings_override: Settings) -> None:
 
 
 @pytest.mark.integration
-def test_empty_api_token_allows_all_requests(tmp_data_dir: object) -> None:
-    """When API_TOKEN is empty, auth is disabled and all requests pass through (dev mode)."""
-    # Build settings with empty token
-    settings_no_token = Settings(api_token="")  # type: ignore[call-arg]
-    app = _make_app_with_protected_route(settings_no_token)
-    client = TestClient(app, raise_server_exceptions=False)
-    # No auth header — still succeeds because auth is disabled
-    response = client.get("/protected")
-    assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+def test_empty_api_token_raises_at_instantiation() -> None:
+    """ORC-001: Settings refuses to instantiate with an empty API_TOKEN.
+
+    The old behavior (silent pass-through) is removed — an empty token now
+    raises ValidationError at startup so the server cannot start unauthenticated.
+    """
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="API_TOKEN must be set"):
+        Settings(api_token="", _env_file=None)  # type: ignore[call-arg]
 
 
 @pytest.mark.integration

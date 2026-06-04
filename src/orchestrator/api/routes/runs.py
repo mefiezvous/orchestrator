@@ -7,11 +7,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from loguru import logger
 from sqlalchemy.orm import Session
 
 from orchestrator.api.auth import require_token
+from orchestrator.api.limiter import limiter
 from orchestrator.api.schemas import (
     CollectRequest,
     EvalRequest,
@@ -122,7 +123,9 @@ def _argv_eval(body: EvalRequest) -> list[str]:
 
 
 @router.post("/collect", status_code=202, response_model=RunCreatedResponse)
+@limiter.limit("5/minute")  # ORC-010: max 5 job enqueues/min per IP
 def post_collect(
+    request: Request,
     body: CollectRequest,
     session: Annotated[Session, Depends(get_session)],
     settings: Annotated[Settings, Depends(get_settings)],
@@ -149,7 +152,9 @@ def post_collect(
 
 
 @router.post("/train", status_code=202, response_model=RunCreatedResponse)
+@limiter.limit("5/minute")  # ORC-010: max 5 job enqueues/min per IP
 def post_train(
+    request: Request,
     body: TrainRequest,
     session: Annotated[Session, Depends(get_session)],
     settings: Annotated[Settings, Depends(get_settings)],
@@ -176,12 +181,33 @@ def post_train(
 
 
 @router.post("/eval", status_code=202, response_model=RunCreatedResponse)
+@limiter.limit("5/minute")  # ORC-010: max 5 job enqueues/min per IP
 def post_eval(
+    request: Request,
     body: EvalRequest,
     session: Annotated[Session, Depends(get_session)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> RunCreatedResponse:
     """Submit an evaluation job."""
+    # ORC-008: confine checkpoint_path to lerobot_repo/checkpoints/ (resolve
+    # symlinks so is_relative_to is not fooled by a traversal via symlink).
+
+    checkpoints_root = (settings.lerobot_repo / "checkpoints").resolve()
+    try:
+        resolved = (settings.lerobot_repo / "checkpoints" / body.checkpoint_path).resolve(
+            strict=False
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid checkpoint_path: {exc}") from exc
+    if not resolved.is_relative_to(checkpoints_root):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "checkpoint_path must resolve to a path under "
+                f"{checkpoints_root} — path traversal is not allowed"
+            ),
+        )
+
     argv = _argv_eval(body)
     run = create_run(
         session,

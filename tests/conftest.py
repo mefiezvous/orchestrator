@@ -17,6 +17,27 @@ from orchestrator.core.config import Settings, get_settings
 from orchestrator.db.models import Base, Run, create_run
 
 # ---------------------------------------------------------------------------
+# Ensure API_TOKEN is always set in tests so Settings() does not raise.
+# (ORC-001: the validator rejects an empty token at instantiation time.)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _require_api_token_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Set API_TOKEN=test-token for every test that does not set it explicitly.
+
+    This prevents ORC-001's fail-closed validator from raising ValidationError
+    in tests that construct Settings() but don't care about the token value.
+    Tests that need a *specific* token should use monkeypatch.setenv BEFORE
+    calling get_settings() (which will override this fixture's value).
+    """
+    monkeypatch.setenv("API_TOKEN", "test-token")
+    get_settings.cache_clear()
+    yield  # type: ignore[misc]
+    get_settings.cache_clear()
+
+
+# ---------------------------------------------------------------------------
 # Filesystem
 # ---------------------------------------------------------------------------
 
