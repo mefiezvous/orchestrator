@@ -23,6 +23,7 @@ dependencies = [
     "pyyaml>=6.0",
     "mlflow-skinny>=2.18",
     "slowapi>=0.1.9",
+    "starlette>=1.0.1",
 ]
 
 [project.optional-dependencies]

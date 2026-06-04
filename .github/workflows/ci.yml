@@ -86,7 +86,12 @@ jobs:
         run: uv sync --locked --extra dev
 
       - name: Run pip-audit on lockfile
-        run: uv run --with pip-audit pip-audit --strict
+        # --skip-editable: orchestrator itself is an editable install, not on
+        # PyPI, so pip-audit cannot audit it; skip it and audit third-party
+        # deps only. --strict is intentionally omitted: combined with
+        # --skip-editable it would convert the editable-skip warning into a
+        # fatal error, which defeats the purpose of --skip-editable.
+        run: uv run --with pip-audit pip-audit --skip-editable
 
   docker-build:
     name: Docker build check
