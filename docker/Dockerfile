@@ -2,6 +2,20 @@
 # syntax=docker/dockerfile:1.7
 
 ###############################################################################
+# Stage: frontend-builder (ADR-003)
+###############################################################################
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /build/frontend
+
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm ci
+
+COPY frontend/ ./
+# Codegen runs against the committed snapshot — no live API needed in CI.
+RUN npm run codegen:snapshot && npm run build
+
+###############################################################################
 # Stage: builder
 ###############################################################################
 FROM python:3.12-slim-bookworm AS builder
@@ -81,6 +95,10 @@ COPY --from=builder /opt/venv /opt/venv
 
 # Copy the worker entrypoint
 COPY --from=builder /tmp/entrypoint-worker.sh /usr/local/bin/entrypoint-worker.sh
+
+# ADR-003: copy the built frontend bundle. Path matches `frontend_dist` in
+# orchestrator.api.main: /app/frontend/dist relative to /app/src/orchestrator.
+COPY --from=frontend-builder /build/frontend/dist /app/frontend/dist
 
 # ORC-005: create a non-root user (uid 1000) to run the process.
 # This uid matches user: "1000:1000" in docker-compose.yml so bind-mounted

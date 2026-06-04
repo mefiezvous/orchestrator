@@ -4,7 +4,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -46,6 +49,23 @@ def create_app() -> FastAPI:
     app.include_router(configs.router)
     app.include_router(artifacts.router)
     app.include_router(streams.router)
+
+    # ADR-003: serve the built frontend SPA at the root. Mounted strictly after
+    # all `/api/*` routers so it cannot shadow them. Guarded by `is_dir()` so
+    # dev (no build) and unit tests still boot cleanly. Two candidate locations:
+    # the in-repo src layout (dev) and /app/frontend/dist (Docker runtime).
+    candidates = [
+        Path(__file__).resolve().parents[3] / "frontend" / "dist",
+        Path("/app/frontend/dist"),
+    ]
+    for frontend_dist in candidates:
+        if frontend_dist.is_dir():
+            app.mount(
+                "/",
+                StaticFiles(directory=str(frontend_dist), html=True),
+                name="frontend",
+            )
+            break
 
     return app
 

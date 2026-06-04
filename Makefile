@@ -1,4 +1,4 @@
-.PHONY: install token up up-gpu down logs ps test lint typecheck migrate revision clean help
+.PHONY: install token up up-gpu down logs ps test lint typecheck migrate revision clean help frontend-install frontend-dev frontend-build frontend-codegen
 
 PY := uv run python
 COMPOSE := docker compose -f docker/docker-compose.yml
@@ -81,3 +81,15 @@ typecheck:
 clean:
 	rm -rf .pytest_cache .mypy_cache .ruff_cache .coverage htmlcov build dist
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+
+frontend-install:
+	cd frontend && npm ci
+
+frontend-dev:
+	cd frontend && npm run dev
+
+frontend-build:
+	cd frontend && npm run build
+
+frontend-codegen:
+	cd frontend && npm run codegen
