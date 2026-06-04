@@ -1,0 +1,78 @@
+# SPDX-FileCopyrightText: 2026 Arthur Mouraud
+# SPDX-License-Identifier: Apache-2.0
+# ORC-007: pre-commit hooks for lint, format, type-check, secret scanning,
+# and workspace contamination guard.
+#
+# Install: pre-commit install   (also wired into `make install`)
+# Run manually: pre-commit run --all-files
+
+repos:
+  # ---------------------------------------------------------------------------
+  # Ruff: linting
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.10
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  # ---------------------------------------------------------------------------
+  # Mypy: type checking (uses the project's venv via `uv run`)
+  # ---------------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy (strict)
+        language: system
+        entry: uv run mypy
+        args: [src]
+        types: [python]
+        pass_filenames: false
+
+  # ---------------------------------------------------------------------------
+  # Gitleaks: secret scanning
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.24.3
+    hooks:
+      - id: gitleaks
+
+  # ---------------------------------------------------------------------------
+  # Workspace contamination guard (ORC-007 / CLAUDE.md rule #1):
+  # Fail if any file from a sibling repo is staged.
+  # ---------------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: no-sibling-repo-files
+        name: no sibling repo files staged
+        language: system
+        entry: bash -c '
+          staged=$(git diff --cached --name-only 2>/dev/null);
+          for pattern in lerobot-playground-portfolio/ ml-core/ robotics-platform-template/ _private/; do
+            if echo "$staged" | grep -q "^$pattern"; then
+              echo "ERROR: staged file in sibling repo $pattern — violates CLAUDE.md rule #1";
+              exit 1;
+            fi;
+          done
+        '
+        pass_filenames: false
+        always_run: true
+
+  # ---------------------------------------------------------------------------
+  # Remote allowlist guard: block accidental pushes to non-canonical remote
+  # ---------------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: remote-allowlist
+        name: remote must be mefiezvous/orchestrator
+        language: system
+        entry: bash -c '
+          remote=$(git remote get-url origin 2>/dev/null || echo "");
+          if [ -n "$remote" ] && ! echo "$remote" | grep -q "mefiezvous/orchestrator"; then
+            echo "ERROR: origin remote ($remote) is not mefiezvous/orchestrator — refusing commit";
+            exit 1;
+          fi
+        '
+        pass_filenames: false
+        always_run: true
