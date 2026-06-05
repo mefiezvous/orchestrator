@@ -473,6 +473,72 @@ WSL2 disk I/O is slower on cross-mounted paths. For best performance:
 
 ---
 
+## Launcher Troubleshooting (ADR-002)
+
+The `make start` / `python -m orchestrator.launcher` command wraps `docker compose up -d`,
+polls the health endpoint, and opens the browser.  Below are the three most common failure
+modes.
+
+### (a) Docker Desktop not running
+
+**Symptom:**
+```
+ERROR: Docker not found. Make sure Docker Desktop (or the Docker CLI) is installed
+       and running, then try again.
+```
+
+**Diagnosis / fix:**
+```bash
+# Verify Docker is on PATH and the daemon is running
+docker info
+```
+If `docker info` hangs or errors, open Docker Desktop and wait for the whale icon to appear
+in the system tray (status: "Docker Desktop is running"), then retry:
+```bash
+make start
+```
+
+### (b) Port 8000 already in use
+
+**Symptom:**
+`docker compose up` fails with `bind: address already in use` and the launcher exits with
+code 1.
+
+**Diagnosis / fix:**
+```bash
+# Find the process occupying port 8000
+lsof -i :8000          # Linux/macOS
+netstat -ano | findstr 8000   # Windows
+
+# Kill it (if safe) or change the port in .env
+API_PORT=8001          # add this line to .env, then make start
+```
+
+### (c) Healthcheck timeout
+
+**Symptom:**
+```
+ERROR: API did not become healthy within 60s. Dumping `docker compose logs api`…
+```
+
+The launcher dumps `docker compose logs api` automatically.  Common sub-causes:
+
+| Sub-cause | How to spot it | Fix |
+|---|---|---|
+| Redis not ready yet | `logs api` shows `ConnectionRefusedError` | `make down && make start` |
+| Migration failed | `logs api` shows `alembic` error | `make migrate` then `make start` |
+| Missing `.env` values | `logs api` shows `ValidationError` | `cp .env.example .env && make token` |
+| Very slow machine | Timeout too short | `python -m orchestrator.launcher --timeout 120` |
+
+Full diagnostic flow:
+```bash
+docker compose -f docker/docker-compose.yml ps          # are containers up?
+docker compose -f docker/docker-compose.yml logs api    # what did the API say?
+docker compose -f docker/docker-compose.yml logs redis  # is Redis healthy?
+```
+
+---
+
 ## Common Troubleshooting
 
 ### 401 Unauthorized

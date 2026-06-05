@@ -201,6 +201,19 @@ The 4 sibling repos (`lerobot-playground-portfolio`, `ml-core`, `robotics-platfo
 - Expose via endpoints like `GET /api/v1/configs/envs` → `["cube_reach_v1", "pusht_image", ...]`
 - Never modify configs — read-only only
 
+### `launcher/` — Python Launcher (ADR-002)
+
+**Files:** `src/orchestrator/launcher/__init__.py`, `src/orchestrator/launcher/__main__.py`
+
+The launcher is a thin (~150 LOC) developer-experience wrapper that chains three steps in
+sequence: `up()` calls `docker compose up -d`; `wait_healthy()` polls
+`GET /api/v1/health` with exponential back-off until the API responds 200 (or the timeout is
+exceeded and exits 1 after dumping `docker compose logs api`); `open_browser()` opens the
+SPA at `/` when `frontend/dist/index.html` is present, or `/api/docs` otherwise.
+
+Invoked via `make start` / `python -m orchestrator.launcher`.  The `--down` flag delegates
+to `down()` which wraps `docker compose down`.  See **ADR-002** for the decision rationale.
+
 ### `docker/` — Docker Compose + Dockerfiles
 
 **Files:** `docker/docker-compose.yml`, `docker/docker-compose.gpu.yml`, `docker/api.Dockerfile`, `docker/worker.Dockerfile`
