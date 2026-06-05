@@ -21,7 +21,7 @@ dependencies = [
     "httpx>=0.27",
     "python-multipart>=0.0.12",
     "pyyaml>=6.0",
-    "mlflow-skinny>=2.18",
+    "mlflow-skinny>=3.13.0",
     "slowapi>=0.1.9",
     "starlette>=1.0.1",
 ]
