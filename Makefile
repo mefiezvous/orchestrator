@@ -1,4 +1,4 @@
-.PHONY: install token up up-gpu down logs ps test lint typecheck migrate revision clean help frontend-install frontend-dev frontend-build frontend-codegen
+.PHONY: install token start stop up up-gpu down logs ps test lint typecheck migrate revision clean help frontend-install frontend-dev frontend-build frontend-codegen
 
 PY := uv run python
 COMPOSE := docker compose -f docker/docker-compose.yml
@@ -8,9 +8,11 @@ help:
 	@echo "Common targets:"
 	@echo "  make install    uv sync (dev extras)"
 	@echo "  make token      generate a fresh API_TOKEN and write it to .env"
-	@echo "  make up         docker compose up (api + worker + redis + mlflow)"
+	@echo "  make start      start stack, wait for healthy, open browser (ADR-002)"
+	@echo "  make stop       stop and remove containers (ADR-002)"
+	@echo "  make up         docker compose up -d (advanced / CI use)"
 	@echo "  make up-gpu     same with GPU runtime"
-	@echo "  make down       stop and remove containers"
+	@echo "  make down       stop and remove containers (raw compose)"
 	@echo "  make logs       tail compose logs"
 	@echo "  make migrate    alembic upgrade head"
 	@echo "  make test       pytest (unit + integration, skip gpu/e2e)"
@@ -38,6 +40,12 @@ p.write_text('\n'.join(lines) + '\n'); \
 try: os.chmod(p, stat.S_IRUSR | stat.S_IWUSR)\
 except OSError: pass; \
 print(f'API_TOKEN written to .env ({len(tok)} chars, mode 0o600).')"
+
+start:
+	$(PY) -m orchestrator.launcher
+
+stop:
+	$(PY) -m orchestrator.launcher --down
 
 up:
 	$(COMPOSE) up -d

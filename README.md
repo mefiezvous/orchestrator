@@ -13,8 +13,22 @@ The four sibling repos are **never** tracked from here. They sit alongside this 
 
 ```bash
 cp .env.example .env
+make install               # install Python deps (uv sync)
 make token                 # generate API_TOKEN
-make up                    # api + worker + redis + mlflow
+make start                 # start stack, wait for healthy, open browser
+```
+
+`make start` wraps `docker compose up -d`, polls `GET /api/v1/health` until
+the API is ready, prints a summary with the API / MLflow URLs, then opens the
+browser automatically.  To stop the stack, run `make stop`.
+
+> **Advanced / CI:** `make up` is still available and calls `docker compose up -d`
+> directly, without the health-poll or browser step.  Use it for scripts and CI
+> pipelines where you control readiness checks yourself.
+
+To verify the API manually after startup:
+
+```bash
 curl -H "Authorization: Bearer $(grep ^API_TOKEN= .env | cut -d= -f2)" \
      http://127.0.0.1:8000/api/v1/health
 ```
