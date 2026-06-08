@@ -11,12 +11,30 @@ The four sibling repos are **never** tracked from here. They sit alongside this 
 
 ## Quickstart (Linux + Docker)
 
+One command, from a fresh `git clone`, to a running stack with the browser open:
+
+```bash
+uv run bootstrap.py        # or: make bootstrap
+```
+
+It seeds `.env` from `.env.example` (generating a fresh `API_TOKEN` if needed),
+then starts the stack, waits for the API to become healthy, and opens the
+browser. `uv run` installs the Python deps on the fly; the frontend is built
+inside the Docker image (ADR-003) — nothing else to install locally beyond
+`uv` and a running Docker Desktop. Re-running it is safe: an existing `.env`
+and token are left untouched.
+
+<details>
+<summary>Equivalent step-by-step (if you want more control)</summary>
+
 ```bash
 cp .env.example .env
 make install               # install Python deps (uv sync)
 make token                 # generate API_TOKEN
 make start                 # start stack, wait for healthy, open browser
 ```
+
+</details>
 
 `make start` wraps `docker compose up -d`, polls `GET /api/v1/health` until
 the API is ready, prints a summary with the API / MLflow URLs, then opens the
