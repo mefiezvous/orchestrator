@@ -54,7 +54,8 @@ def up() -> None:
     ]
     logger.info("Starting Docker Compose stack: {}", " ".join(cmd))
     try:
-        result = subprocess.run(              cmd,
+        result = subprocess.run(
+            cmd,
             cwd=str(_REPO_ROOT),
             capture_output=True,
             text=True,
@@ -180,7 +181,8 @@ def down() -> None:
     ]
     logger.info("Stopping Docker Compose stack: {}", " ".join(cmd))
     try:
-        result = subprocess.run(              cmd,
+        result = subprocess.run(
+            cmd,
             cwd=str(_REPO_ROOT),
             capture_output=True,
             text=True,
@@ -216,7 +218,8 @@ def _dump_api_logs() -> None:
         "api",
     ]
     try:
-        result = subprocess.run(              cmd,
+        result = subprocess.run(
+            cmd,
             cwd=str(_REPO_ROOT),
             capture_output=True,
             text=True,
