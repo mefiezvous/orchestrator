@@ -1,4 +1,4 @@
-.PHONY: install token start stop up up-gpu down logs ps test lint typecheck migrate revision clean help frontend-install frontend-dev frontend-build frontend-codegen
+.PHONY: install bootstrap token start stop up up-gpu down logs ps test lint typecheck migrate revision clean help frontend-install frontend-dev frontend-build frontend-codegen
 
 PY := uv run python
 COMPOSE := docker compose -f docker/docker-compose.yml
@@ -6,6 +6,7 @@ COMPOSE_GPU := docker compose -f docker/docker-compose.yml -f docker/docker-comp
 
 help:
 	@echo "Common targets:"
+	@echo "  make bootstrap  fresh clone -> running stack in one shot (.env + token + start)"
 	@echo "  make install    uv sync (dev extras)"
 	@echo "  make token      generate a fresh API_TOKEN and write it to .env"
 	@echo "  make start      start stack, wait for healthy, open browser (ADR-002)"
@@ -22,6 +23,9 @@ help:
 install:
 	uv sync --extra dev
 	pre-commit install
+
+bootstrap:
+	uv run bootstrap.py
 
 token:
 	@$(PY) -c "import secrets, pathlib, os, stat; \
