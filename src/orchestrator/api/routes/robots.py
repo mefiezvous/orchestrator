@@ -6,9 +6,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from orchestrator.api.auth import require_token
+from orchestrator.api.limiter import limiter
 from orchestrator.api.schemas import (
     LineageNodeResponse,
     RobotSpecBranchRequest,
@@ -77,22 +78,26 @@ def get_robot(spec_id: str) -> RobotSpecResponse:
 
 
 @router.post("/", response_model=RobotSpecResponse, status_code=201)
-def create_robot(request: RobotSpecCreateRequest) -> RobotSpecResponse:
+@limiter.limit("10/minute")  # WS-04: cap declare/branch writes per IP
+def create_robot(request: Request, body: RobotSpecCreateRequest) -> RobotSpecResponse:
     """Declare a new root robot spec (``parent_id=None``)."""
-    if get_robot_spec(request.id) is not None:
-        raise HTTPException(status_code=409, detail=f"Robot spec '{request.id}' already exists")
-    entry = _to_entry(request, parent_id=None)
+    if get_robot_spec(body.id) is not None:
+        raise HTTPException(status_code=409, detail=f"Robot spec '{body.id}' already exists")
+    entry = _to_entry(body, parent_id=None)
     _write_or_409(entry)
     return RobotSpecResponse.from_entry(entry)
 
 
 @router.post("/{parent_id}/branch", response_model=RobotSpecResponse, status_code=201)
-def branch_robot(parent_id: str, request: RobotSpecBranchRequest) -> RobotSpecResponse:
+@limiter.limit("10/minute")  # WS-04: cap declare/branch writes per IP
+def branch_robot(
+    request: Request, parent_id: str, body: RobotSpecBranchRequest
+) -> RobotSpecResponse:
     """Create a new robot spec derived from ``parent_id``."""
     if get_robot_spec(parent_id) is None:
         raise HTTPException(status_code=404, detail=f"Robot spec '{parent_id}' not found")
-    if get_robot_spec(request.id) is not None:
-        raise HTTPException(status_code=409, detail=f"Robot spec '{request.id}' already exists")
-    entry = _to_entry(request, parent_id=parent_id)
+    if get_robot_spec(body.id) is not None:
+        raise HTTPException(status_code=409, detail=f"Robot spec '{body.id}' already exists")
+    entry = _to_entry(body, parent_id=parent_id)
     _write_or_409(entry)
     return RobotSpecResponse.from_entry(entry)

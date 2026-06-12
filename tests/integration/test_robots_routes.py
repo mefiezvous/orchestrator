@@ -4,15 +4,34 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
+from orchestrator.api.limiter import limiter
 from orchestrator.core.config import Settings, get_settings
 from orchestrator.core.robot_specs import RobotSpecEntry, write_robot_spec
+
+
+@pytest.fixture(autouse=True)
+def _disable_rate_limit() -> Iterator[None]:
+    """Disable the shared SlowAPI limiter for functional tests (WS-04).
+
+    The limiter is a process-wide singleton; leaving it enabled would let
+    request counts accumulate across tests. Each test that actually exercises
+    the limit re-enables it explicitly.
+    """
+    prev = limiter.enabled
+    limiter.enabled = False
+    yield
+    limiter.enabled = prev
 
 
 def _make_app(settings: Settings) -> FastAPI:
@@ -20,11 +39,16 @@ def _make_app(settings: Settings) -> FastAPI:
 
     Injects *settings* as a ``get_settings`` override for the FastAPI DI layer,
     and monkeypatching of env vars + cache_clear handles the internal
-    ``get_settings()`` calls inside ``core.robot_specs`` helpers.
+    ``get_settings()`` calls inside ``core.robot_specs`` helpers. The SlowAPI
+    limiter is wired in (mirroring ``create_app``) so the ``@limiter.limit``
+    decorators on the mutating routes (WS-04) resolve ``app.state.limiter``.
     """
     from orchestrator.api.routes.robots import router
 
     app = FastAPI()
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
+    app.add_middleware(SlowAPIMiddleware)
     app.include_router(router)
     app.dependency_overrides[get_settings] = lambda: settings
     return app
@@ -391,3 +415,34 @@ def test_branch_robot_duplicate_id_409(tmp_path: Path, monkeypatch: pytest.Monke
         get_settings.cache_clear()
 
     assert response.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# WS-04: rate limiting on the mutating endpoints
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_create_robot_rate_limited(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The 11th create within the window is rejected with 429 (limit = 10/min)."""
+    specs_dir = tmp_path / "robot_specs"
+    s = _settings_for(specs_dir, monkeypatch)
+    try:
+        limiter.enabled = True
+        try:
+            limiter.reset()  # clear any residual window from earlier tests
+        except Exception:
+            pass
+        client = TestClient(_make_app(s))
+        codes = [
+            client.post(
+                "/api/v1/robots/", json=_create_payload(f"rl_v{i}", "rl"), headers=_AUTH
+            ).status_code
+            for i in range(11)
+        ]
+    finally:
+        limiter.enabled = False
+        get_settings.cache_clear()
+
+    assert codes[:10] == [201] * 10
+    assert codes[10] == 429

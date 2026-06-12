@@ -103,6 +103,26 @@ def _validate_hydra_overrides(overrides: list[str]) -> list[str]:
     return overrides
 
 
+def _validate_hydra_value(value: str, label: str) -> str:
+    """Validate a single structured field interpolated into the Hydra argv (WS-02).
+
+    ``env``/``profile`` reach the Hydra CLI like an override entry but bypass the
+    ``hydra_overrides`` list, so they must enforce the same checks: reject the
+    dangerous OmegaConf resolvers (e.g. ``${oc.env:HF_TOKEN}``, which could
+    exfiltrate a forwarded secret through the log stream) and the forbidden
+    character set, plus the length cap.
+    """
+    if len(value) > _MAX_OVERRIDE_LEN:
+        raise ValueError(f"{label} too long (max {_MAX_OVERRIDE_LEN} chars): {value[:64]!r}")
+    if _DANGEROUS_RESOLVER_RE.search(value):
+        raise ValueError(
+            f"{label} contains a forbidden OmegaConf resolver (e.g. ${{oc.env:...}}): {value!r}"
+        )
+    if not _SAFE_OVERRIDE_RE.match(value):
+        raise ValueError(f"{label} contains forbidden characters: {value!r}")
+    return value
+
+
 class CollectRequest(BaseModel):
     episodes: int = Field(gt=0, le=10000, default=10)
     env: str | None = None
@@ -115,6 +135,11 @@ class CollectRequest(BaseModel):
     @classmethod
     def validate_overrides(cls, v: list[str]) -> list[str]:
         return _validate_hydra_overrides(v)
+
+    @field_validator("env")
+    @classmethod
+    def validate_env(cls, v: str | None) -> str | None:
+        return v if v is None else _validate_hydra_value(v, "env")
 
 
 class TrainRequest(BaseModel):
@@ -129,6 +154,20 @@ class TrainRequest(BaseModel):
     @classmethod
     def validate_overrides(cls, v: list[str]) -> list[str]:
         return _validate_hydra_overrides(v)
+
+    @field_validator("env", "profile")
+    @classmethod
+    def validate_group_selectors(cls, v: str | None) -> str | None:
+        return v if v is None else _validate_hydra_value(v, "field")
+
+    @field_validator("hf_repo_id")
+    @classmethod
+    def validate_hf_repo_id(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if not _HF_REPO_ID_RE.fullmatch(v):
+            raise ValueError(f"hf_repo_id {v!r} must match '<owner>/<name>'")
+        return v
 
 
 class EvalRequest(BaseModel):
@@ -244,6 +283,30 @@ def _validate_dataset_root(value: str) -> str:
     return value
 
 
+# Patterns forbidden in free-text robot fields — mirrors the workspace anti-leak
+# hook (WS-01). A robot declared via the API writes a YAML file into the PUBLIC
+# repo's robot_specs/, so its free-text fields must never carry private-layer or
+# proprietary references. Lower-cased substring match (the hook is `grep -i`).
+_IP_LEAK_PATTERNS = (
+    "_private/",
+    "my-robot-stack/",
+    "proprietary_",
+    "licenseref-proprietary",
+    "all rights reserved",
+)
+
+
+def _reject_ip_leak_terms(value: str, label: str) -> str:
+    lowered = value.lower()
+    for pattern in _IP_LEAK_PATTERNS:
+        if pattern in lowered:
+            raise ValueError(
+                f"{label} must not reference private-layer / proprietary terms "
+                f"(matched {pattern!r})"
+            )
+    return value
+
+
 class RobotSpecFields(BaseModel):
     """Mirrors ``mlcore.robots.base.RobotSpec`` (the ``spec:`` YAML section)."""
 
@@ -295,6 +358,11 @@ class RobotTaskFields(BaseModel):
     fps: int = Field(gt=0, default=20)
     episode_length: int = Field(gt=0, default=200)
     seed: int = 42
+
+    @field_validator("task_description")
+    @classmethod
+    def validate_task_description(cls, v: str) -> str:
+        return _reject_ip_leak_terms(v, "task.task_description")
 
 
 class RobotAdapterFields(BaseModel):
@@ -350,7 +418,13 @@ class RobotSpecCreateRequest(BaseModel):
     @field_validator("id", "name")
     @classmethod
     def validate_identifiers(cls, v: str) -> str:
-        return _validate_id(v, "field")
+        _validate_id(v, "field")
+        return _reject_ip_leak_terms(v, "field")
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, v: str) -> str:
+        return _reject_ip_leak_terms(v, "description")
 
 
 class RobotSpecBranchRequest(RobotSpecCreateRequest):
