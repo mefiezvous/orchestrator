@@ -44,6 +44,7 @@ class Settings(BaseSettings):
 
     workspace_root: Path = Field(default=Path("/workspace"))
     lerobot_repo: Path = Field(default=Path("/workspace/lerobot-playground-portfolio"))
+    robot_specs_dir: Path = Field(default=Path("/workspace/lerobot-playground-portfolio/robot_specs"))
 
     data_dir: Path = Field(default=Path("/data"))
     database_url: str = Field(default="sqlite:////data/runs.db")
