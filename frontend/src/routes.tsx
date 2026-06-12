@@ -4,6 +4,7 @@ import { RunsList } from "./pages/RunsList";
 import { RunDetail } from "./pages/RunDetail";
 import { Submit } from "./pages/Submit";
 import { Artifacts } from "./pages/Artifacts";
+import { Robots } from "./pages/Robots";
 
 export const router = createBrowserRouter([
   {
@@ -15,6 +16,7 @@ export const router = createBrowserRouter([
       { path: "runs/:id", element: <RunDetail /> },
       { path: "submit", element: <Submit /> },
       { path: "artifacts", element: <Artifacts /> },
+      { path: "robots", element: <Robots /> },
     ],
   },
 ]);
