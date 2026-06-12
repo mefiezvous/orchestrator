@@ -81,9 +81,18 @@ def _seed_specs(specs_dir: Path) -> None:
                 "extra_obs_keys": [],
                 "relational_features": [],
             },
-            task={"task_description": "Reach the cube", "fps": 20, "episode_length": 200, "seed": 42},
+            task={
+                "task_description": "Reach the cube",
+                "fps": 20,
+                "episode_length": 200,
+                "seed": 42,
+            },
             adapter={"type": "mujoco_playground", "env_name": "CubeReachV1"},
-            dataset={"repo_id": "mefiezvous/cube-reach-v1", "task_id": "cube_reach_v1", "root": "data/cube_reach_v1"},
+            dataset={
+                "repo_id": "mefiezvous/cube-reach-v1",
+                "task_id": "cube_reach_v1",
+                "root": "data/cube_reach_v1",
+            },
         ),
         robot_specs_dir=specs_dir,
     )
@@ -106,9 +115,18 @@ def _seed_specs(specs_dir: Path) -> None:
                 "extra_obs_keys": [],
                 "relational_features": [],
             },
-            task={"task_description": "Reach the cube", "fps": 20, "episode_length": 200, "seed": 42},
+            task={
+                "task_description": "Reach the cube",
+                "fps": 20,
+                "episode_length": 200,
+                "seed": 42,
+            },
             adapter=None,
-            dataset={"repo_id": "mefiezvous/cube-reach-v2", "task_id": "cube_reach_v2", "root": "data/cube_reach_v2"},
+            dataset={
+                "repo_id": "mefiezvous/cube-reach-v2",
+                "task_id": "cube_reach_v2",
+                "root": "data/cube_reach_v2",
+            },
         ),
         robot_specs_dir=specs_dir,
     )
