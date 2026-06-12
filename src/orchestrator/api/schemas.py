@@ -9,9 +9,10 @@ WP-4 schemas live in the clearly-delimited section below.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # ---------------------------------------------------------------------------
 # hydra_overrides validation (ORC-002)
@@ -102,6 +103,26 @@ def _validate_hydra_overrides(overrides: list[str]) -> list[str]:
     return overrides
 
 
+def _validate_hydra_value(value: str, label: str) -> str:
+    """Validate a single structured field interpolated into the Hydra argv (WS-02).
+
+    ``env``/``profile`` reach the Hydra CLI like an override entry but bypass the
+    ``hydra_overrides`` list, so they must enforce the same checks: reject the
+    dangerous OmegaConf resolvers (e.g. ``${oc.env:HF_TOKEN}``, which could
+    exfiltrate a forwarded secret through the log stream) and the forbidden
+    character set, plus the length cap.
+    """
+    if len(value) > _MAX_OVERRIDE_LEN:
+        raise ValueError(f"{label} too long (max {_MAX_OVERRIDE_LEN} chars): {value[:64]!r}")
+    if _DANGEROUS_RESOLVER_RE.search(value):
+        raise ValueError(
+            f"{label} contains a forbidden OmegaConf resolver (e.g. ${{oc.env:...}}): {value!r}"
+        )
+    if not _SAFE_OVERRIDE_RE.match(value):
+        raise ValueError(f"{label} contains forbidden characters: {value!r}")
+    return value
+
+
 class CollectRequest(BaseModel):
     episodes: int = Field(gt=0, le=10000, default=10)
     env: str | None = None
@@ -114,6 +135,11 @@ class CollectRequest(BaseModel):
     @classmethod
     def validate_overrides(cls, v: list[str]) -> list[str]:
         return _validate_hydra_overrides(v)
+
+    @field_validator("env")
+    @classmethod
+    def validate_env(cls, v: str | None) -> str | None:
+        return v if v is None else _validate_hydra_value(v, "env")
 
 
 class TrainRequest(BaseModel):
@@ -128,6 +154,20 @@ class TrainRequest(BaseModel):
     @classmethod
     def validate_overrides(cls, v: list[str]) -> list[str]:
         return _validate_hydra_overrides(v)
+
+    @field_validator("env", "profile")
+    @classmethod
+    def validate_group_selectors(cls, v: str | None) -> str | None:
+        return v if v is None else _validate_hydra_value(v, "field")
+
+    @field_validator("hf_repo_id")
+    @classmethod
+    def validate_hf_repo_id(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if not _HF_REPO_ID_RE.fullmatch(v):
+            raise ValueError(f"hf_repo_id {v!r} must match '<owner>/<name>'")
+        return v
 
 
 class EvalRequest(BaseModel):
@@ -207,3 +247,239 @@ class VersionResponse(BaseModel):
     orchestrator: str
     python: str
     lerobot_repo_exists: bool
+
+
+# ---------------------------------------------------------------------------
+# Robot specs (P1) — declare/branch robots from robot_specs/*.yaml
+# ---------------------------------------------------------------------------
+
+# Identifier pattern shared with lerobot-playground-portfolio's add_robot.py
+# (LRB-004): technical keys (`id`, obs/feature names) used as registry keys,
+# dataset namespaces, and dict keys must be snake_case identifiers.
+_ID_RE = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
+
+# MuJoCo Playground env class names (e.g. "CubeReachV1") — PascalCase identifiers.
+_ENV_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,63}$")
+
+# Hugging Face Hub repo id: "<owner>/<name>".
+_HF_REPO_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$")
+
+
+def _validate_id(value: str, label: str) -> str:
+    if not _ID_RE.fullmatch(value):
+        raise ValueError(f"{label} {value!r} must match {_ID_RE.pattern}")
+    return value
+
+
+def _validate_dataset_root(value: str) -> str:
+    """Reject traversal/absolute paths; require a ``data/`` prefix (ORC-008-style)."""
+    if ".." in value:
+        raise ValueError("dataset.root must not contain '..'")
+    p = Path(value)
+    if p.is_absolute():
+        raise ValueError("dataset.root must be a relative path")
+    if p.parts[:1] != ("data",):
+        raise ValueError("dataset.root must start with 'data/'")
+    return value
+
+
+# Patterns forbidden in free-text robot fields — mirrors the workspace anti-leak
+# hook (WS-01). A robot declared via the API writes a YAML file into the PUBLIC
+# repo's robot_specs/, so its free-text fields must never carry private-layer or
+# proprietary references. Lower-cased substring match (the hook is `grep -i`).
+_IP_LEAK_PATTERNS = (
+    "_private/",
+    "my-robot-stack/",
+    "proprietary_",
+    "licenseref-proprietary",
+    "all rights reserved",
+)
+
+
+def _reject_ip_leak_terms(value: str, label: str) -> str:
+    lowered = value.lower()
+    for pattern in _IP_LEAK_PATTERNS:
+        if pattern in lowered:
+            raise ValueError(
+                f"{label} must not reference private-layer / proprietary terms "
+                f"(matched {pattern!r})"
+            )
+    return value
+
+
+class RobotSpecFields(BaseModel):
+    """Mirrors ``mlcore.robots.base.RobotSpec`` (the ``spec:`` YAML section)."""
+
+    n_joints: int = Field(gt=0)
+    obs_keys: list[str] = Field(min_length=1)
+    action_dim: int = Field(gt=0)
+    target_pos_key: str
+    success_threshold: float = Field(gt=0.0, lt=1.0, default=0.05)
+    max_episode_steps: int = Field(gt=0, default=200)
+    ee_pos_key: str = "ee_pos"
+    extra_obs_keys: list[str] = Field(default_factory=list)
+    relational_features: list[tuple[str, str]] = Field(default_factory=list)
+
+    @field_validator("obs_keys", "extra_obs_keys")
+    @classmethod
+    def validate_key_lists(cls, v: list[str]) -> list[str]:
+        return [_validate_id(k, "spec.obs_keys item") for k in v]
+
+    @field_validator("target_pos_key", "ee_pos_key")
+    @classmethod
+    def validate_keys(cls, v: str) -> str:
+        return _validate_id(v, "spec key")
+
+    @field_validator("relational_features")
+    @classmethod
+    def validate_relational_features(cls, v: list[tuple[str, str]]) -> list[tuple[str, str]]:
+        return [
+            (
+                _validate_id(a, "spec.relational_features item"),
+                _validate_id(b, "spec.relational_features item"),
+            )
+            for a, b in v
+        ]
+
+    @model_validator(mode="after")
+    def validate_target_pos_key_in_obs_keys(self) -> RobotSpecFields:
+        if self.target_pos_key not in self.obs_keys:
+            raise ValueError(
+                f"spec.target_pos_key {self.target_pos_key!r} must be in "
+                f"spec.obs_keys {self.obs_keys!r}"
+            )
+        return self
+
+
+class RobotTaskFields(BaseModel):
+    """The ``task:`` YAML section — "objectifs" not already covered by RobotSpecFields."""
+
+    task_description: str = Field(default="", max_length=500)
+    fps: int = Field(gt=0, default=20)
+    episode_length: int = Field(gt=0, default=200)
+    seed: int = 42
+
+    @field_validator("task_description")
+    @classmethod
+    def validate_task_description(cls, v: str) -> str:
+        return _reject_ip_leak_terms(v, "task.task_description")
+
+
+class RobotAdapterFields(BaseModel):
+    """The ``adapter:`` YAML section. Absent/null = no auto-registration (lineage stub)."""
+
+    type: Literal["mujoco_playground"]
+    env_name: str
+
+    @field_validator("env_name")
+    @classmethod
+    def validate_env_name(cls, v: str) -> str:
+        if not _ENV_NAME_RE.fullmatch(v):
+            raise ValueError(f"adapter.env_name {v!r} must match {_ENV_NAME_RE.pattern}")
+        return v
+
+
+class RobotDatasetFields(BaseModel):
+    """The ``dataset:`` YAML section."""
+
+    repo_id: str
+    task_id: str
+    root: str
+
+    @field_validator("repo_id")
+    @classmethod
+    def validate_repo_id(cls, v: str) -> str:
+        if not _HF_REPO_ID_RE.fullmatch(v):
+            raise ValueError(f"dataset.repo_id {v!r} must match '<owner>/<name>'")
+        return v
+
+    @field_validator("task_id")
+    @classmethod
+    def validate_task_id(cls, v: str) -> str:
+        return _validate_id(v, "dataset.task_id")
+
+    @field_validator("root")
+    @classmethod
+    def validate_root(cls, v: str) -> str:
+        return _validate_dataset_root(v)
+
+
+class RobotSpecCreateRequest(BaseModel):
+    """Body for ``POST /api/v1/robots`` — declares a new root robot spec."""
+
+    id: str
+    name: str
+    description: str = Field(default="", max_length=500)
+    spec: RobotSpecFields
+    task: RobotTaskFields = Field(default_factory=RobotTaskFields)
+    adapter: RobotAdapterFields | None = None
+    dataset: RobotDatasetFields
+
+    @field_validator("id", "name")
+    @classmethod
+    def validate_identifiers(cls, v: str) -> str:
+        _validate_id(v, "field")
+        return _reject_ip_leak_terms(v, "field")
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, v: str) -> str:
+        return _reject_ip_leak_terms(v, "description")
+
+
+class RobotSpecBranchRequest(RobotSpecCreateRequest):
+    """Body for ``POST /api/v1/robots/{parent_id}/branch``.
+
+    Same shape as :class:`RobotSpecCreateRequest` — ``parent_id`` is taken
+    from the path, not the body, since it must reference an existing spec.
+    """
+
+
+class RobotSpecResponse(BaseModel):
+    id: str
+    name: str
+    parent_id: str | None
+    version: int
+    created_at: str
+    description: str
+    spec: RobotSpecFields
+    task: RobotTaskFields
+    adapter: RobotAdapterFields | None
+    dataset: RobotDatasetFields
+
+    @classmethod
+    def from_entry(cls, entry: Any) -> RobotSpecResponse:
+        return cls(
+            id=entry.id,
+            name=entry.name,
+            parent_id=entry.parent_id,
+            version=entry.version,
+            created_at=entry.created_at,
+            description=entry.description,
+            spec=RobotSpecFields.model_validate(entry.spec),
+            task=RobotTaskFields.model_validate(entry.task),
+            adapter=RobotAdapterFields.model_validate(entry.adapter) if entry.adapter else None,
+            dataset=RobotDatasetFields.model_validate(entry.dataset),
+        )
+
+
+class LineageNodeResponse(BaseModel):
+    id: str
+    name: str
+    parent_id: str | None
+    description: str
+    version: int
+    created_at: str
+    children: list[LineageNodeResponse] = Field(default_factory=list)
+
+    @classmethod
+    def from_node(cls, node: Any) -> LineageNodeResponse:
+        return cls(
+            id=node.id,
+            name=node.name,
+            parent_id=node.parent_id,
+            description=node.description,
+            version=node.version,
+            created_at=node.created_at,
+            children=[cls.from_node(child) for child in node.children],
+        )

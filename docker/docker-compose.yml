@@ -87,6 +87,7 @@ services:
     environment:
       WORKSPACE_ROOT: /workspace
       LEROBOT_REPO: /workspace/lerobot-playground-portfolio
+      ROBOT_SPECS_DIR: /workspace/lerobot-playground-portfolio/robot_specs
       DATA_DIR: /data
       DATABASE_URL: sqlite:////data/runs.db
       REDIS_URL: redis://redis:6379/0
@@ -96,6 +97,10 @@ services:
       - ${WORKSPACE_HOST_PATH:-../..}/lerobot-playground-portfolio:/workspace/lerobot-playground-portfolio:ro
       - ${WORKSPACE_HOST_PATH:-../..}/ml-core:/workspace/ml-core:ro
       - ${WORKSPACE_HOST_PATH:-../..}/robotics-platform-template:/workspace/robotics-platform-template:ro
+      # ADR-004: scoped RW override for /api/v1/robots (declare/branch robots).
+      # The only writable path for this service — pure YAML, no code/config
+      # execution. read_only: true above still applies to everything else.
+      - ${WORKSPACE_HOST_PATH:-../..}/lerobot-playground-portfolio/robot_specs:/workspace/lerobot-playground-portfolio/robot_specs
       - ../data:/data
     depends_on:
       redis:

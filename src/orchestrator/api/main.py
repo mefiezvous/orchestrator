@@ -42,13 +42,14 @@ def create_app() -> FastAPI:
     # No CORS by default — frontend must be reverse-proxied or same-origin.
     # CORS opt-in could be added later via env var.
 
-    from orchestrator.api.routes import artifacts, configs, runs, streams, system
+    from orchestrator.api.routes import artifacts, configs, robots, runs, streams, system
 
     app.include_router(system.router)
     app.include_router(runs.router)
     app.include_router(configs.router)
     app.include_router(artifacts.router)
     app.include_router(streams.router)
+    app.include_router(robots.router)
 
     # ADR-003: serve the built frontend SPA at the root. Mounted strictly after
     # all `/api/*` routers so it cannot shadow them. Guarded by `is_dir()` so

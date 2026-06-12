@@ -4,6 +4,7 @@ const links = [
   { to: "/runs", label: "Runs" },
   { to: "/submit", label: "Submit" },
   { to: "/artifacts", label: "Artifacts" },
+  { to: "/robots", label: "Robots" },
 ];
 
 export function Sidebar() {

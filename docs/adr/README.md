@@ -38,4 +38,8 @@ If the decision is local and reversible, a code comment is enough.
 
 ## Index
 
-_(No local ADRs yet.)_
+| ADR | Title | Status |
+|-----|-------|--------|
+| [ADR-002](ADR-002-wrapping-strategy.md) | Orchestrator Wrapping Strategy (launcher) | Accepted 2026-06-03 |
+| [ADR-003](ADR-003-frontend-strategy.md) | Orchestrator Frontend Strategy | Accepted 2026-06-04 |
+| [ADR-004](ADR-004-robots-endpoint-rw-mount.md) | `/api/v1/robots`: scoped RW mount for `robot_specs/` | Implemented 2026-06-10 |
